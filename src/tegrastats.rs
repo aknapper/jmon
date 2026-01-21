@@ -57,7 +57,6 @@ pub struct TegrastatsParser {
     ram_re: Regex,
     swap_re: Regex,
     cpu_re: Regex,
-    gpu_re: Regex,
     emc_re: Regex,
     temp_re: Regex,
     power_re: Regex,
@@ -69,7 +68,6 @@ impl TegrastatsParser {
             ram_re: Regex::new(r"RAM\s+(?P<used>\d+)/(?P<total>\d+)MB").unwrap(),
             swap_re: Regex::new(r"SWAP\s+(?P<used>\d+)/(?P<total>\d+)MB").unwrap(),
             cpu_re: Regex::new(r"CPU\s+\[(?P<list>[^\]]+)]").unwrap(),
-            gpu_re: Regex::new(r"GR3D_FREQ\s+(?P<util>\d+)%").unwrap(),
             emc_re: Regex::new(r"EMC_FREQ\s+(?P<util>\d+)%").unwrap(),
             temp_re: Regex::new(r"(?P<name>[A-Za-z0-9_]+)@(?P<temp>\d+(?:\.\d+)?)C").unwrap(),
             power_re: Regex::new(
@@ -100,12 +98,6 @@ impl TegrastatsParser {
             if let Some(list) = caps.name("list") {
                 snapshot.cpu_cores = parse_cpu_list(list.as_str());
             }
-        }
-
-        if let Some(caps) = self.gpu_re.captures(line) {
-            snapshot.gpu_util = caps
-                .name("util")
-                .and_then(|v| v.as_str().parse::<f32>().ok());
         }
 
         if let Some(caps) = self.emc_re.captures(line) {
@@ -146,7 +138,6 @@ impl TegrastatsParser {
         let has_data = !snapshot.cpu_cores.is_empty()
             || snapshot.ram_used_mb.is_some()
             || snapshot.swap_used_mb.is_some()
-            || snapshot.gpu_util.is_some()
             || snapshot.emc_util.is_some()
             || !snapshot.temps.is_empty()
             || !snapshot.power_rails.is_empty();

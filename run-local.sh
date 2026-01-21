@@ -7,4 +7,8 @@ interval="${1:-500}"
 cd "$root_dir"
 
 cargo build --bin fake_tegrastats
-cargo run --bin jmon -- --tegrastats "$root_dir/target/debug/fake_tegrastats" --interval "$interval"
+cargo build --bin fake_nvidia_smi
+cargo run --bin jmon -- \
+  --tegrastats "$root_dir/target/debug/fake_tegrastats" \
+  --nvidia-smi "$root_dir/target/debug/fake_nvidia_smi" \
+  --interval "$interval"

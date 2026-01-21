@@ -120,37 +120,109 @@ fn render_interval_controls(frame: &mut Frame, area: Rect, app: &mut AppState) {
 }
 
 fn render_body(frame: &mut Frame, area: Rect, app: &AppState) {
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-        .split(area);
+    let has_left = app.panes.cpu || app.panes.ram;
+    let has_right = app.panes.gpu || app.panes.temps || app.panes.power;
 
-    let left = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
-        .split(columns[0]);
+    if !has_left && !has_right {
+        return;
+    }
 
-    let right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    let (left_area, right_area) = if has_left && has_right {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
+        (Some(columns[0]), Some(columns[1]))
+    } else if has_left {
+        (Some(area), None)
+    } else {
+        (None, Some(area))
+    };
+
+    if let Some(left_area) = left_area {
+        render_left_column(frame, left_area, app);
+    }
+
+    if let Some(right_area) = right_area {
+        render_right_column(frame, right_area, app);
+    }
+}
+
+fn render_left_column(frame: &mut Frame, area: Rect, app: &AppState) {
+    match (app.panes.cpu, app.panes.ram) {
+        (true, true) => {
+            let left = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+                .split(area);
+            render_cpu_panel(frame, left[0], app);
+            render_ram_panel(frame, left[1], app);
+        }
+        (true, false) => render_cpu_panel(frame, area, app),
+        (false, true) => render_ram_panel(frame, area, app),
+        (false, false) => {}
+    }
+}
+
+fn render_right_column(frame: &mut Frame, area: Rect, app: &AppState) {
+    let mut panels = Vec::new();
+    if app.panes.gpu {
+        panels.push(PaneKind::Gpu);
+    }
+    if app.panes.temps {
+        panels.push(PaneKind::Temps);
+    }
+    if app.panes.power {
+        panels.push(PaneKind::Power);
+    }
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let constraints = match panels.len() {
+        1 => vec![Constraint::Min(0)],
+        2 => vec![Constraint::Percentage(50), Constraint::Percentage(50)],
+        _ => vec![
             Constraint::Percentage(35),
             Constraint::Percentage(25),
             Constraint::Percentage(40),
-        ])
-        .split(columns[1]);
+        ],
+    };
 
-    render_cpu_panel(frame, left[0], app);
-    render_ram_panel(frame, left[1], app);
-    render_gpu_panel(frame, right[0], app);
-    render_temps_panel(frame, right[1], app);
-    render_power_panel(frame, right[2], app);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (idx, pane) in panels.into_iter().enumerate() {
+        if let Some(section) = sections.get(idx) {
+            match pane {
+                PaneKind::Gpu => render_gpu_panel(frame, *section, app),
+                PaneKind::Temps => render_temps_panel(frame, *section, app),
+                PaneKind::Power => render_power_panel(frame, *section, app),
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PaneKind {
+    Gpu,
+    Temps,
+    Power,
 }
 
 fn render_cpu_panel(frame: &mut Frame, area: Rect, app: &AppState) {
-    let title = match app.latest.as_ref().and_then(StatsSnapshot::cpu_total) {
-        Some(total) => format!("CPU {:.0}%", total),
-        None => "CPU".to_string(),
-    };
+    let title = pane_title(
+        1,
+        "CPU",
+        app.latest
+            .as_ref()
+            .and_then(StatsSnapshot::cpu_total)
+            .map(|total| format!("{:.0}%", total)),
+        Color::Green,
+    );
 
     let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(area);
@@ -180,14 +252,15 @@ fn render_cpu_panel(frame: &mut Frame, area: Rect, app: &AppState) {
 }
 
 fn render_ram_panel(frame: &mut Frame, area: Rect, app: &AppState) {
-    let title = match app
-        .latest
-        .as_ref()
-        .and_then(StatsSnapshot::ram_percent)
-    {
-        Some(percent) => format!("RAM {:.0}%", percent),
-        None => "RAM".to_string(),
-    };
+    let title = pane_title(
+        2,
+        "RAM",
+        app.latest
+            .as_ref()
+            .and_then(StatsSnapshot::ram_percent)
+            .map(|percent| format!("{:.0}%", percent)),
+        Color::Yellow,
+    );
 
     let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(area);
@@ -210,10 +283,15 @@ fn render_ram_panel(frame: &mut Frame, area: Rect, app: &AppState) {
 }
 
 fn render_gpu_panel(frame: &mut Frame, area: Rect, app: &AppState) {
-    let title = match app.latest.as_ref().and_then(|snap| snap.gpu_util) {
-        Some(util) => format!("GPU {:.0}%", util),
-        None => "GPU".to_string(),
-    };
+    let title = pane_title(
+        3,
+        "GPU",
+        app.latest
+            .as_ref()
+            .and_then(|snap| snap.gpu_util)
+            .map(|util| format!("{:.0}%", util)),
+        Color::Cyan,
+    );
 
     let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(area);
@@ -246,10 +324,15 @@ fn render_gpu_panel(frame: &mut Frame, area: Rect, app: &AppState) {
 }
 
 fn render_power_panel(frame: &mut Frame, area: Rect, app: &AppState) {
-    let title = match app.latest.as_ref().and_then(StatsSnapshot::total_power_mw) {
-        Some(total) => format!("Power {}mW", total),
-        None => "Power".to_string(),
-    };
+    let title = pane_title(
+        5,
+        "Power",
+        app.latest
+            .as_ref()
+            .and_then(StatsSnapshot::total_power_mw)
+            .map(|total| format!("{}mW", total)),
+        Color::LightRed,
+    );
 
     let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(area);
@@ -298,7 +381,9 @@ fn render_power_panel(frame: &mut Frame, area: Rect, app: &AppState) {
 }
 
 fn render_temps_panel(frame: &mut Frame, area: Rect, app: &AppState) {
-    let block = Block::default().title("Temps").borders(Borders::ALL);
+    let block = Block::default()
+        .title(pane_title(4, "Temps", None, Color::LightBlue))
+        .borders(Borders::ALL);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -423,6 +508,26 @@ fn bar_line(label: &str, percent: f32, width: u16, target: SparkRgb) -> Line<'st
         Span::raw(" "),
         Span::styled(percent_text, Style::default().fg(percent_color)),
     ])
+}
+
+fn pane_title(index: u8, name: &str, value: Option<String>, accent: Color) -> Line<'static> {
+    let mut spans = Vec::new();
+    let bracket_style = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let index_style = Style::default().fg(accent).add_modifier(Modifier::BOLD);
+    let name_style = Style::default().add_modifier(Modifier::BOLD);
+
+    spans.push(Span::styled("[".to_string(), bracket_style));
+    spans.push(Span::styled(index.to_string(), index_style));
+    spans.push(Span::styled("]".to_string(), bracket_style));
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(name.to_string(), name_style));
+
+    if let Some(value) = value {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(value, Style::default().fg(Color::Gray)));
+    }
+
+    Line::from(spans)
 }
 
 fn make_bar(percent: f64, width: usize) -> String {

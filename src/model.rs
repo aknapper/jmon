@@ -136,6 +136,7 @@ pub struct AppState {
     pub error: Option<String>,
     pub buttons: UiButtons,
     pub hover: HoverTarget,
+    pub panes: PaneVisibility,
 }
 
 impl AppState {
@@ -148,6 +149,7 @@ impl AppState {
             error: None,
             buttons: UiButtons::default(),
             hover: HoverTarget::None,
+            panes: PaneVisibility::default(),
         }
     }
 }
@@ -177,4 +179,25 @@ pub enum HoverTarget {
     None,
     Minus,
     Plus,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PaneVisibility {
+    pub cpu: bool,
+    pub ram: bool,
+    pub gpu: bool,
+    pub temps: bool,
+    pub power: bool,
+}
+
+impl Default for PaneVisibility {
+    fn default() -> Self {
+        Self {
+            cpu: true,
+            ram: true,
+            gpu: true,
+            temps: true,
+            power: true,
+        }
+    }
 }
